@@ -6,6 +6,8 @@ import pickle
 import numpy as np
 from datetime import datetime
 import os
+import logging
+logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__, static_folder="client/build", static_url_path="")
 CORS(app)
@@ -24,22 +26,99 @@ DATA_PATH = os.path.join(BASE_DIR, "data", "Waitinglist_patients.csv")
 
 df = pd.read_csv(DATA_PATH)
 
+
+state_map = {
+    "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR",
+    "California": "CA", "Colorado": "CO", "Connecticut": "CT", "Delaware": "DE",
+    "Florida": "FL", "Georgia": "GA", "Hawaii": "HI", "Idaho": "ID",
+    "Illinois": "IL", "Indiana": "IN", "Iowa": "IA", "Kansas": "KS",
+    "Kentucky": "KY", "Louisiana": "LA", "Maine": "ME", "Maryland": "MD",
+    "Massachusetts": "MA", "Michigan": "MI", "Minnesota": "MN", "Mississippi": "MS",
+    "Missouri": "MO", "Montana": "MT", "Nebraska": "NE", "Nevada": "NV",
+    "New Hampshire": "NH", "New Jersey": "NJ", "New Mexico": "NM", "New York": "NY",
+    "North Carolina": "NC", "North Dakota": "ND", "Ohio": "OH", "Oklahoma": "OK",
+    "Oregon": "OR", "Pennsylvania": "PA", "Rhode Island": "RI", "South Carolina": "SC",
+    "South Dakota": "SD", "Tennessee": "TN", "Texas": "TX", "Utah": "UT",
+    "Vermont": "VT", "Virginia": "VA", "Washington": "WA", "West Virginia": "WV",
+    "Wisconsin": "WI", "Wyoming": "WY"
+}
+
+
+
+region_map = {
+  "Region 1 – Connecticut, Maine, Massachusetts, New Hampshire, Rhode Island, Eastern Vermont": 1,
+  "Region 2 – Delaware, District of Columbia, Maryland, New Jersey, Pennsylvania, West Virginia, Northern Virginia": 2,
+  "Region 3 – Alabama, Arkansas, Florida, Georgia, Louisiana, Mississippi, Puerto Rico": 3,
+  "Region 4 – Oklahoma, Texas": 4,
+  "Region 5 – Arizona, California, Nevada, New Mexico, Utah": 5,
+  "Region 6 – Alaska, Hawaii, Idaho, Montana, Oregon, Washington": 6,
+  "Region 7 – Illinois, Minnesota, North Dakota, South Dakota, Wisconsin": 7,
+  "Region 8 – Colorado, Iowa, Kansas, Missouri, Nebraska, Wyoming": 8,
+  "Region 9 – New York, Western Vermont": 9,
+  "Region 10 – Indiana, Michigan, Ohio": 10,
+  "Region 11 – Kentucky, North Carolina, South Carolina, Southern Ohio, Tennessee, Virginia": 11
+}
+
+ethnicity_map = {
+        1: "White, Non-Hispanic",
+        2: "Black, Non-Hispanic",
+        4: "Hispanic/Latino",
+        5: "Asian, Non-Hispanic",
+        6: "Amer Ind/Alaska Native",
+        7: "Native Hawaiian/other Pacific Islander, Non-Hispanic",
+        9: "Multiracial, Non-Hispanic",
+        998: "Unknown"
+    }
+
+ethnicity_reverse_map = {v: k for k, v in ethnicity_map.items()}
+
+diabetes_map = {
+        1: "None",
+        2: "Type I",
+        3: "Type II",
+        4: "Other",
+        5: "Unknown"
+    }
+
+diabetes_reverse_map = {v: k for k, v in diabetes_map.items()}
+
+
 def filter_data(df, hba1c, **filters):
-    print(filters)
     filtered = df.copy()
     
-    # Initialize filter_number with total number of rows
-    filter_number = filtered.shape[0]
+    
 
     for col, val in filters.items():
-        if val is None or val == "" or val == []:  # skip if empty
+        if val is None or val == "" or val == []:
             continue
-        if isinstance(val, list):
-            filtered = filtered[filtered[col].isin(val)]
-        else:
-            filtered = filtered[filtered[col] == val]
 
-    # Apply hba1c-based weighting AFTER filtering
+        # Multi-select fields use OR (isin)
+        if col in ["PERM_STATE", "REGION", "ETHCAT", "DIAB", "ABO"]:
+            if isinstance(val, list):
+                # Map full names to database values if necessary
+                if col == "PERM_STATE":
+                    db_values = [state_map.get(v, v) for v in val]
+                elif col == "REGION":
+                    db_values = [region_map.get(v, v) for v in val]
+                elif col == "ETHCAT":
+                    db_values = [ethnicity_reverse_map.get(v, v) for v in val]
+                    print("reached", db_values)
+                elif col == "DIAB":
+                    db_values = [diabetes_reverse_map.get(v,v) for v in val]
+                elif col == "ABO":
+                    db_values = val
+                filtered = filtered[filtered[col].isin(db_values)]
+                print(db_values)
+                
+            else:
+                filtered = filtered[filtered[col] == val]
+        else:
+            # Single-value filters use AND
+            filtered = filtered[filtered[col] == val]
+        
+
+    # Apply hba1c weighting if needed
+    filter_number = filtered.shape[0]
     if hba1c is not None:
         if hba1c == 1:
             filter_number = int(filtered.shape[0] * 0.115)
@@ -51,10 +130,15 @@ def filter_data(df, hba1c, **filters):
             filter_number = int(filtered.shape[0] * 0.195)
         else:
             filter_number = int(filtered.shape[0] * 0.05)
-    else:
-        filter_number = filtered.shape[0]
 
     return filter_number
+
+
+
+
+
+
+
 
 
 def summarize_results(hba1c, **filters):
@@ -90,28 +174,10 @@ def summarize_results(hba1c, **filters):
     else:
         bmi_group = "Obese Class III (≥40)"
 
-    # ---- Ethnicity ----
-    ethnicity_map = {
-        1: "White, Non-Hispanic",
-        2: "Black, Non-Hispanic",
-        4: "Hispanic/Latino",
-        5: "Asian, Non-Hispanic",
-        6: "American Indian/Alaska Native",
-        7: "Native Hawaiian/Pacific Islander",
-        9: "Multiracial, Non-Hispanic",
-        998: "Unknown"
-    }
-    ethnicity = ethnicity_map.get(filters.get("ETHCAT"), "Not Selected")
+    
+    ethnicity = filters.get("ETHCAT")
 
-    # ---- Diabetes Type ----
-    diabetes_map = {
-        1: "No Diabetes",
-        2: "Type I",
-        3: "Type II",
-        4: "Other",
-        5: "Unknown"
-    }
-    diabetes = diabetes_map.get(filters.get("DIAB"), "Not Selected")
+    diabetes = (filters.get("DIAB"))
 
     # ---- HbA1c ----
     hba1c_cat = hba1c
@@ -142,28 +208,39 @@ def summarize_results(hba1c, **filters):
         cpra_cat = "80–97 (High Sensitization)"
     else:
         cpra_cat = "98–100 (Very High Sensitization)"
+    eth_cat = filters.get("ETHCAT")
 
+    state = filters.get("PERM_STATE")
+    region = filters.get("REGION")
+    abo = filters.get("ABO")
     # ---- Build Summary ----
     summary = {
         "Age Group": age_group,
         "Gender": filters.get("GENDER", "Not Selected") or "Not Selected",
         "BMI Category": bmi_group,
-        "Ethnicity": ethnicity,
+        "Ethnicity":  ", ".join(eth_cat) if isinstance(eth_cat, list) and eth_cat else eth_cat or "Not Selected",
         "Payment Type": filters.get("PAYC_CAT", "Not Selected") or "Not Selected",
-        "State": filters.get("PERM_STATE", "Not Selected") or "Not Selected",
-        "Region": filters.get("REGION", "Not Selected") or "Not Selected",
-        "Diabetes Type": diabetes,
+        "State":  ", ".join(state) if isinstance(state, list) and state else state or "Not Selected",
+        "Region":  ", ".join(region) if isinstance(region, list) and region else region or "Not Selected",
+        "Diabetes Type":  ", ".join(diabetes) if isinstance(diabetes, list) and diabetes else diabetes or "Not Selected",
         "HbA1c": hba1c_cat,
         "cPRA": cpra_cat,
-        "Blood Type": filters.get("ABO", "Not Selected") or "Not Selected"
+        "Blood Type":  ", ".join(abo) if isinstance(abo, list) and abo else abo or "Not Selected"
     }
 
     return summary
 
 
+
+
+
+
+
+
+
 @app.route('/predict', methods=['POST'])
 def predict():
-    print("predict reached")
+    app.logger.debug("predict reached")
     data = request.json
 
     # Extract data
@@ -234,38 +311,36 @@ def predict():
     on_dialysis = int(data.get("onDialysis")) if data.get("onDialysis") not in [None, ""] else None
     first_dialysis_date = data.get("firstDialysisDate")
     payment_type = data.get("paymentType")
+    if payment_type == "Other":
+        payment_type = "Others"
+    print("Payment type", payment_type)
     blood_type = data.get("bloodType")
     ethnicity = data.get("ethnicity")
     comorbidities = data.get("comorbidities")
+
+
+
+
+
+    diab_ty_list = data.get("diabetesType")  # could be None or a list of strings
+
+    # Mapping dictionary
+    diab_map = {
+        "None": 1,
+        "Type 1": 2,
+        "Type 2": 3,
+        "Other": 4
+        }
+
     diab = None
-    diab_ty = data.get("diabetesType")
-    if diab_ty is not None:
-        if diab_ty == "Type 1":
-            diab = 2
-        elif diab_ty == "Type 2":
-            diab = 3
-        elif diab_ty == "Other":
-            diab = 4
-        elif diab_ty =="None":
-            diab = 1
-   
-    ethnicity_map = {
-        "White, Non-Hispanic": 1,
-        "Black, Non-Hispanic": 2,
-        "Hispanic/Latino": 4,
-        "Asian, Non-Hispanic": 5,
-        "Amer Ind/Alaska Native, Non-Hispanic": 6,
-        "Native Hawaiian/other Pacific Islander, Non-Hispanic": 7,
-        "Multiracial, Non-Hispanic": 9,
-        "Unknown": 998
-    }
+    if diab_ty_list:
+        diab = diab_ty_list
+    print("diab", diab)
 
     eth_cat = None
     if ethnicity:
-        if isinstance(ethnicity, list) and len(ethnicity) > 0:
-            eth_cat = ethnicity_map.get(ethnicity[0], 998)  # take first if multiple selected
-        else:
-            eth_cat = ethnicity_map.get(ethnicity, 998)
+        eth_cat = ethnicity
+
 
     filters = {
     "AGE_CAT": age_cat,
@@ -279,6 +354,8 @@ def predict():
     "CCPRA_CAT": cpra_cat,
     "DIAB": diab,
     }
+    
+
     similar_patients = filter_data(df, hba1c_cat, **filters)
     print(similar_patients)
 
@@ -295,6 +372,6 @@ def ping():
     return "pong"
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5002, debug=True)
 
 

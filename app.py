@@ -120,16 +120,22 @@ def filter_data(df, hba1c, **filters):
     # Apply hba1c weighting if needed
     filter_number = filtered.shape[0]
     if hba1c is not None:
+        
         if hba1c == 1:
             filter_number = int(filtered.shape[0] * 0.115)
+            
         elif hba1c == 2:
             filter_number = int(filtered.shape[0] * 0.29)
+            
         elif hba1c == 3:
             filter_number = int(filtered.shape[0] * 0.405)
+            
         elif hba1c == 4:
             filter_number = int(filtered.shape[0] * 0.195)
+            
         else:
             filter_number = int(filtered.shape[0] * 0.05)
+    
 
     return filter_number
 
@@ -166,13 +172,13 @@ def summarize_results(hba1c, **filters):
     elif bmi == 1:
         bmi_group = "Underweight (≤18.5)"
     elif bmi ==2:
-        bmi_group = "Normal/Overweight (18.6–29.9)"
+        bmi_group = "Normal/Overweight (18.6–30)"
     elif bmi == 3:
-        bmi_group = "Obese Class I (30–34.9)"
+        bmi_group = "Obese Class I (30.1–35)"
     elif bmi == 4:
-        bmi_group = "Obese Class II (35–39.9)"
+        bmi_group = "Obese Class II (35.1–40)"
     else:
-        bmi_group = "Obese Class III (≥40)"
+        bmi_group = "Obese Class III (>40)"
 
     
     ethnicity = filters.get("ETHCAT")
@@ -257,7 +263,7 @@ def predict():
             cpra_cat = 4
         elif 80 <= cpra < 98:
             cpra_cat = 5
-        elif bmi >= 98:
+        elif cpra >= 98:
             cpra_cat = 6
     # Convert BMI to BMI category
     bmi_cat = None
@@ -372,6 +378,6 @@ def ping():
     return "pong"
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5002, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
 
 

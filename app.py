@@ -64,7 +64,7 @@ ethnicity_map = {
         2: "Black, Non-Hispanic",
         4: "Hispanic/Latino",
         5: "Asian, Non-Hispanic",
-        6: "Amer Ind/Alaska Native",
+        6: "Amer Ind/Alaska Native, Non-Hispanic",
         7: "Native Hawaiian/other Pacific Islander, Non-Hispanic",
         9: "Multiracial, Non-Hispanic",
         998: "Unknown"
